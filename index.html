@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Secret Santa Draw</title>
+<style>
+  :root {
+    --pine: #0d2a1b; --pine-deep: #133824; --holly: #7ce38b;
+    --santa: #c8362c; --snow: #f4f1e8;
+  }
+  body {
+    font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem;
+    color: var(--snow);
+    background:
+      radial-gradient(rgba(255,255,255,.09) 1.5px, transparent 1.6px),
+      radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.1px),
+      var(--pine);
+    background-size: 46px 46px, 23px 23px;
+    background-position: 0 0, 12px 18px;
+  }
+  h1 {
+    font-size: 1.4rem; padding-bottom: .4rem;
+    border-bottom: 6px solid;
+    border-image: repeating-linear-gradient(60deg, var(--santa) 0 12px, #fff 12px 24px) 6;
+  }
+  a { color: var(--holly); }
+  textarea {
+    width: 100%; font-family: monospace; font-size: 0.9rem; padding: 0.5rem;
+    background: var(--pine-deep); color: var(--snow);
+    border: 1px solid #2c5c3c; border-radius: 6px;
+  }
+  button {
+    font-size: 1rem; padding: 0.5rem 1.25rem; margin-top: 0.5rem; cursor: pointer;
+    background: var(--santa); color: #fff; border: 0; border-radius: 999px;
+  }
+  button:hover { background: #a52b22; }
+  .pair {
+    margin: 0.55rem 0; padding: 0.45rem 0.7rem;
+    background: rgba(255,255,255,.06); border-left: 4px solid var(--holly); border-radius: 4px;
+  }
+  .pair:nth-of-type(even) { border-left-color: var(--santa); }
+  .pair a { color: var(--holly); word-break: break-all; font-size: 0.85rem; }
+  .links { font-size: 0.85rem; word-break: break-all; }
+  .error { color: #ff8f85; }
+  .reveal {
+    font-size: 1.3rem; margin: 1rem 0; padding: 0.8rem;
+    background: rgba(200,54,44,.18); border: 1px solid var(--santa); border-radius: 6px;
+  }
+  .spoiler { background: var(--santa); color: transparent; cursor: pointer; padding: 0.1rem 0.5rem; border-radius: 3px; user-select: none; }
+  .spoiler.revealed { background: transparent; color: inherit; padding: 0; cursor: default; user-select: auto; }
+  code { background: rgba(255,255,255,.12); padding: 0.1rem 0.3rem; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+//JS-BEGIN
+function parseInput(text) {
+  const people = [], excl = Object.create(null);
+  for (const line of text.split('\n')) {
+    const toks = line.trim().split(/\s+/).filter(Boolean);
+    if (!toks.length) continue;
+    const name = toks[0];
+    if (!excl[name]) { excl[name] = new Set(); people.push(name); }
+    for (const t of toks.slice(1)) {
+      if (t[0] === '!') {
+        const other = t.slice(1);
+        if (other && other !== name) excl[name].add(other);
+      }
+    }
+  }
+  return { people, excl };
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Randomised backtracking: assign each giver an allowed receiver,
+// no self-pairs, each person receives exactly once.
+function generate(people, excl) {
+  const order = shuffle(people.slice());
+  const match = Object.create(null), used = new Set();
+  const bt = i => {
+    if (i === order.length) return true;
+    const giver = order[i];
+    const cands = shuffle(people.filter(r =>
+      r !== giver && !used.has(r) && !excl[giver].has(r)));
+    for (const r of cands) {
+      used.add(r); match[giver] = r;
+      if (bt(i + 1)) return true;
+      used.delete(r); delete match[giver];
+    }
+    return false;
+  };
+  return bt(0) ? match : null;
+}
+
+// Compact URL-safe base64 state encoding (state lives entirely in the link).
+function enc(o) {
+  const json = JSON.stringify(o);
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function dec(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '==='.slice((s.length + 3) % 4));
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+//JS-END
+
+const app = document.getElementById('app');
+const baseUrl = location.href.split('#')[0];
+const DEFAULT =
+`Alice !Bob
+Bob !Carol
+Carol`;
+
+function pairLink(name, match) { return baseUrl + '#p' + enc([name, match]); }
+
+function renderSetup() {
+  app.innerHTML =
+    `<h1>Secret Santa Draw</h1>
+     <p>One participant per line: <code>Name</code> followed by
+     <code>!person</code> rules preventing that pairing.</p>
+     <textarea id="names" rows="6">${DEFAULT}</textarea>
+     <button id="go">Draw pairings</button>
+     <div id="err" class="error"></div>`;
+  document.getElementById('go').onclick = () => {
+    const { people, excl } = parseInput(document.getElementById('names').value);
+    if (people.length < 2) {
+      document.getElementById('err').textContent = 'Need at least two participants.';
+      return;
+    }
+    const match = generate(people, excl);
+    if (!match) {
+      document.getElementById('err').textContent =
+        'No valid pairing possible with these rules.';
+      return;
+    }
+    location.hash = 'a' + enc(people.map(g => [g, match[g]]));
+  };
+}
+
+function pairRow(g, r, href, label) {
+  return `<div class="pair"><b>${escHtml(g)}</b> &rarr; ` +
+    `<span class="spoiler" title="Click to reveal" onclick="this.classList.add('revealed')">${escHtml(r)}</span> &mdash; ` +
+    `<a href="${href}">${label}</a></div>`;
+}
+
+function renderAll(pairs) {
+  app.innerHTML =
+    `<h1>Secret Santa pairings</h1>
+     <p>Pairings are hidden &mdash; click the grey bar to reveal. Give each person their own link.</p>` +
+    pairs.map(([g, r]) =>
+      pairRow(g, r, pairLink(g, r), 'their link')).join('') +
+    `<p><a href="${baseUrl}">New draw</a></p>`;
+}
+
+function renderPair([name, match]) {
+  app.innerHTML =
+    `<h1>Secret Santa</h1>
+     <div class="reveal">Hi <b>${escHtml(name)}</b>, you are gifting <b>${escHtml(match)}</b>.</div>
+     <p>Keep it secret!</p>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function route() {
+  const h = location.hash.slice(1);
+  try {
+    if (h[0] === 'a') renderAll(dec(h.slice(1)));
+    else if (h[0] === 'p') renderPair(dec(h.slice(1)));
+    else renderSetup();
+  } catch (e) {
+    app.innerHTML = '<p class="error">Invalid link.</p>';
+  }
+}
+addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
