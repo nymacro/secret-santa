@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Secret Santa Draw</title>
 <style>
   :root {
@@ -34,6 +35,17 @@
     background: var(--santa); color: #fff; border: 0; border-radius: 999px;
   }
   button:hover { background: #a52b22; }
+  @media (max-width: 480px) {
+    body { margin: 1rem auto; }
+    h1 { font-size: 1.2rem; }
+    button {
+      width: 100%; padding: 0.7rem 1.25rem;
+      font-size: 1.05rem;
+    }
+    textarea { font-size: 16px; }
+    .reveal { font-size: 1.1rem; }
+    .pair a { font-size: 0.95rem; }
+  }
   .pair {
     margin: 0.55rem 0; padding: 0.45rem 0.7rem;
     background: rgba(255,255,255,.06); border-left: 4px solid var(--holly); border-radius: 4px;
